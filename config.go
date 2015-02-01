@@ -203,6 +203,12 @@ func init() {
 		}
 	}
 
+	// Set the default config file AppConfigPath by the second Args passed while runing.
+	// The Args[0] is the beego app running path
+	if len(os.Args) > 1 {
+		AppConfigPath = filepath.Join(os.Args[1], "app.conf")
+	}
+
 	AppConfigProvider = "ini"
 
 	StaticDir = make(map[string]string)
