@@ -23,9 +23,7 @@ import (
 var GlobalDocApi map[string]interface{}
 
 func init() {
-	if EnableDocs {
-		GlobalDocApi = make(map[string]interface{})
-	}
+	GlobalDocApi = make(map[string]interface{})
 }
 
 func serverDocs(ctx *context.Context) {
