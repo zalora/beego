@@ -82,16 +82,18 @@ type ResponseMessage struct {
 }
 
 type Parameter struct {
-	ParamType     string `json:"paramType"` // path,query,body,header,form
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	DataType      string `json:"dataType"` // 1.2 needed?
-	Type          string `json:"type"`     // integer
-	Format        string `json:"format"`   // int64
-	AllowMultiple bool   `json:"allowMultiple"`
-	Required      bool   `json:"required"`
-	Minimum       int    `json:"minimum"`
-	Maximum       int    `json:"maximum"`
+	ParamType     string   `json:"paramType"` // path,query,body,header,form
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	DataType      string   `json:"dataType"` // 1.2 needed?
+	Type          string   `json:"type"`     // integer
+	Format        string   `json:"format"`   // int64
+	AllowMultiple bool     `json:"allowMultiple"`
+	Required      bool     `json:"required"`
+	Minimum       int      `json:"minimum"`
+	Maximum       int      `json:"maximum"`
+	Enum          []string `json:"enum"`         // enum values
+	DefaultValue  string   `json:"defaultValue"` // default value
 }
 
 type ErrorResponse struct {
