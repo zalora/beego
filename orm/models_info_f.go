@@ -102,9 +102,9 @@ func newFields() *fields {
 // single field info
 type fieldInfo struct {
 	mi                  *modelInfo
-	fieldIndex          int
+	fieldIndex          []int
 	fieldType           int
-	dbcol               bool
+	dbcol               bool // table column fk and onetoone
 	inModel             bool
 	name                string
 	fullName            string
@@ -116,11 +116,13 @@ type fieldInfo struct {
 	null                bool
 	index               bool
 	unique              bool
-	initial             StrTo
+	colDefault          bool  // whether has default tag
+	initial             StrTo // store the default value
 	size                int
-	auto_now            bool
-	auto_now_add        bool
-	rel                 bool
+	toText              bool
+	autoNow             bool
+	autoNowAdd          bool
+	rel                 bool // if type equal to RelForeignKey, RelOneToOne, RelManyToMany then true
 	reverse             bool
 	reverseField        string
 	reverseFieldInfo    *fieldInfo
@@ -132,16 +134,16 @@ type fieldInfo struct {
 	relModelInfo        *modelInfo
 	digits              int
 	decimals            int
-	isFielder           bool
+	isFielder           bool // implement Fielder interface
 	onDelete            string
 }
 
 // new field info
-func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField) (fi *fieldInfo, err error) {
+func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField, mName string) (fi *fieldInfo, err error) {
 	var (
 		tag       string
 		tagValue  string
-		initial   StrTo
+		initial   StrTo // store the default value
 		fieldType int
 		attrs     map[string]bool
 		tags      map[string]string
@@ -150,6 +152,10 @@ func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField) (f
 
 	fi = new(fieldInfo)
 
+	// if field which CanAddr is the follow type
+	//  A value is addressable if it is an element of a slice,
+	//  an element of an addressable array, a field of an
+	//  addressable struct, or the result of dereferencing a pointer.
 	addrField = field
 	if field.CanAddr() && field.Kind() != reflect.Ptr {
 		addrField = field.Addr()
@@ -160,7 +166,7 @@ func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField) (f
 		}
 	}
 
-	parseStructTag(sf.Tag.Get(defaultStructTagName), &attrs, &tags)
+	attrs, tags = parseStructTag(sf.Tag.Get(defaultStructTagName))
 
 	if _, ok := attrs["-"]; ok {
 		return nil, errSkipField
@@ -186,7 +192,7 @@ checkType:
 		}
 		fieldType = f.FieldType()
 		if fieldType&IsRelField > 0 {
-			err = fmt.Errorf("unsupport rel type custom field")
+			err = fmt.Errorf("unsupport type custom field, please refer to https://github.com/astaxie/beego/blob/master/orm/models_fields.go#L24-L42")
 			goto end
 		}
 	default:
@@ -209,7 +215,7 @@ checkType:
 				}
 				break checkType
 			default:
-				err = fmt.Errorf("error")
+				err = fmt.Errorf("rel only allow these value: fk, one, m2m")
 				goto wrongTag
 			}
 		}
@@ -222,9 +228,14 @@ checkType:
 				break checkType
 			case "many":
 				fieldType = RelReverseMany
+				if tv := tags["rel_table"]; tv != "" {
+					fi.relTable = tv
+				} else if tv := tags["rel_through"]; tv != "" {
+					fi.relThrough = tv
+				}
 				break checkType
 			default:
-				err = fmt.Errorf("error")
+				err = fmt.Errorf("reverse only allow these value: one, many")
 				goto wrongTag
 			}
 		}
@@ -233,8 +244,15 @@ checkType:
 		if err != nil {
 			goto end
 		}
-		if fieldType == TypeCharField && tags["type"] == "text" {
-			fieldType = TypeTextField
+		if fieldType == TypeCharField {
+			switch tags["type"] {
+			case "text":
+				fieldType = TypeTextField
+			case "json":
+				fieldType = TypeJSONField
+			case "jsonb":
+				fieldType = TypeJsonbField
+			}
 		}
 		if fieldType == TypeFloatField && (digits != "" || decimals != "") {
 			fieldType = TypeDecimalField
@@ -242,8 +260,14 @@ checkType:
 		if fieldType == TypeDateTimeField && tags["type"] == "date" {
 			fieldType = TypeDateField
 		}
+		if fieldType == TypeTimeField && tags["type"] == "time" {
+			fieldType = TypeTimeField
+		}
 	}
 
+	// check the rel and reverse type
+	// rel should Ptr
+	// reverse should slice []*struct
 	switch fieldType {
 	case RelForeignKey, RelOneToOne, RelReverseOne:
 		if field.Kind() != reflect.Ptr {
@@ -272,13 +296,18 @@ checkType:
 	fi.column = getColumnName(fieldType, addrField, sf, tags["column"])
 	fi.addrValue = addrField
 	fi.sf = sf
-	fi.fullName = mi.fullName + "." + sf.Name
+	fi.fullName = mi.fullName + mName + "." + sf.Name
 
 	fi.null = attrs["null"]
 	fi.index = attrs["index"]
 	fi.auto = attrs["auto"]
 	fi.pk = attrs["pk"]
 	fi.unique = attrs["unique"]
+
+	// Mark object property if there is attribute "default" in the orm configuration
+	if _, ok := tags["default"]; ok {
+		fi.colDefault = true
+	}
 
 	switch fieldType {
 	case RelManyToMany, RelReverseMany, RelReverseOne:
@@ -303,20 +332,20 @@ checkType:
 
 	if fi.rel && fi.dbcol {
 		switch onDelete {
-		case od_CASCADE, od_DO_NOTHING:
-		case od_SET_DEFAULT:
+		case odCascade, odDoNothing:
+		case odSetDefault:
 			if initial.Exist() == false {
 				err = errors.New("on_delete: set_default need set field a default value")
 				goto end
 			}
-		case od_SET_NULL:
+		case odSetNULL:
 			if fi.null == false {
 				err = errors.New("on_delete: set_null need set field null")
 				goto end
 			}
 		default:
 			if onDelete == "" {
-				onDelete = od_CASCADE
+				onDelete = odCascade
 			} else {
 				err = fmt.Errorf("on_delete value expected choice in `cascade,set_null,set_default,do_nothing`, unknown `%s`", onDelete)
 				goto end
@@ -328,7 +357,7 @@ checkType:
 
 	switch fieldType {
 	case TypeBooleanField:
-	case TypeCharField:
+	case TypeCharField, TypeJSONField, TypeJsonbField:
 		if size != "" {
 			v, e := StrTo(size).Int32()
 			if e != nil {
@@ -338,15 +367,16 @@ checkType:
 			}
 		} else {
 			fi.size = 255
+			fi.toText = true
 		}
 	case TypeTextField:
 		fi.index = false
 		fi.unique = false
-	case TypeDateField, TypeDateTimeField:
+	case TypeTimeField, TypeDateField, TypeDateTimeField:
 		if attrs["auto_now"] {
-			fi.auto_now = true
+			fi.autoNow = true
 		} else if attrs["auto_now_add"] {
-			fi.auto_now_add = true
+			fi.autoNowAdd = true
 		}
 	case TypeFloatField:
 	case TypeDecimalField:
@@ -376,14 +406,12 @@ checkType:
 
 	if fi.auto || fi.pk {
 		if fi.auto {
-
 			switch addrField.Elem().Kind() {
 			case reflect.Int, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint32, reflect.Uint64:
 			default:
 				err = fmt.Errorf("auto primary key only support int, int32, int64, uint, uint32, uint64 but found `%s`", addrField.Elem().Kind())
 				goto end
 			}
-
 			fi.pk = true
 		}
 		fi.null = false
@@ -395,8 +423,8 @@ checkType:
 		fi.index = false
 	}
 
-	if fi.auto || fi.pk || fi.unique || fieldType == TypeDateField || fieldType == TypeDateTimeField {
-		// can not set default
+	// can not set default for these type
+	if fi.auto || fi.pk || fi.unique || fieldType == TypeTimeField || fieldType == TypeDateField || fieldType == TypeDateTimeField {
 		initial.Clear()
 	}
 

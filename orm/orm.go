@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package orm provide ORM for MySQL/PostgreSQL/sqlite
 // Simple Usage
 //
 //	package main
@@ -59,14 +60,15 @@ import (
 	"time"
 )
 
+// DebugQueries define the debug
 const (
-	Debug_Queries = iota
+	DebugQueries = iota
 )
 
+// Define common vars
 var (
-	// DebugLevel       = Debug_Queries
 	Debug            = false
-	DebugLog         = NewLog(os.Stderr)
+	DebugLog         = NewLog(os.Stdout)
 	DefaultRowsLimit = 1000
 	DefaultRelsDepth = 2
 	DefaultTimeLoc   = time.Local
@@ -79,7 +81,10 @@ var (
 	ErrNotImplement  = errors.New("have not implement")
 )
 
+// Params stores the Params
 type Params map[string]interface{}
+
+// ParamsList stores paramslist
 type ParamsList []interface{}
 
 type orm struct {
@@ -99,7 +104,7 @@ func (o *orm) getMiInd(md interface{}, needPtr bool) (mi *modelInfo, ind reflect
 		panic(fmt.Errorf("<Ormer> cannot use non-ptr model struct `%s`", getFullName(typ)))
 	}
 	name := getFullName(typ)
-	if mi, ok := modelCache.getByFN(name); ok {
+	if mi, ok := modelCache.getByFullName(name); ok {
 		return mi, ind
 	}
 	panic(fmt.Errorf("<Ormer> table: `%s` not found, maybe not RegisterModel", name))
@@ -117,7 +122,17 @@ func (o *orm) getFieldInfo(mi *modelInfo, name string) *fieldInfo {
 // read data to model
 func (o *orm) Read(md interface{}, cols ...string) error {
 	mi, ind := o.getMiInd(md, true)
-	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols)
+	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, false)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// read data to model, like Read(), but use "SELECT FOR UPDATE" form
+func (o *orm) ReadForUpdate(md interface{}, cols ...string) error {
+	mi, ind := o.getMiInd(md, true)
+	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, true)
 	if err != nil {
 		return err
 	}
@@ -128,14 +143,21 @@ func (o *orm) Read(md interface{}, cols ...string) error {
 func (o *orm) ReadOrCreate(md interface{}, col1 string, cols ...string) (bool, int64, error) {
 	cols = append([]string{col1}, cols...)
 	mi, ind := o.getMiInd(md, true)
-	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols)
+	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, false)
 	if err == ErrNoRows {
 		// Create
 		id, err := o.Insert(md)
 		return (err == nil), id, err
 	}
 
-	return false, ind.Field(mi.fields.pk.fieldIndex).Int(), err
+	id, vid := int64(0), ind.FieldByIndex(mi.fields.pk.fieldIndex)
+	if mi.fields.pk.fieldType&IsPositiveIntegerField > 0 {
+		id = int64(vid.Uint())
+	} else {
+		id = vid.Int()
+	}
+
+	return false, id, err
 }
 
 // insert model data to database
@@ -154,10 +176,10 @@ func (o *orm) Insert(md interface{}) (int64, error) {
 // set auto pk field
 func (o *orm) setPk(mi *modelInfo, ind reflect.Value, id int64) {
 	if mi.fields.pk.auto {
-		if mi.fields.pk.fieldType&IsPostiveIntegerField > 0 {
-			ind.Field(mi.fields.pk.fieldIndex).SetUint(uint64(id))
+		if mi.fields.pk.fieldType&IsPositiveIntegerField > 0 {
+			ind.FieldByIndex(mi.fields.pk.fieldIndex).SetUint(uint64(id))
 		} else {
-			ind.Field(mi.fields.pk.fieldIndex).SetInt(id)
+			ind.FieldByIndex(mi.fields.pk.fieldIndex).SetInt(id)
 		}
 	}
 }
@@ -179,7 +201,7 @@ func (o *orm) InsertMulti(bulk int, mds interface{}) (int64, error) {
 
 	if bulk <= 1 {
 		for i := 0; i < sind.Len(); i++ {
-			ind := sind.Index(i)
+			ind := reflect.Indirect(sind.Index(i))
 			mi, _ := o.getMiInd(ind.Interface(), false)
 			id, err := o.alias.DbBaser.Insert(o.db, mi, ind, o.alias.TZ)
 			if err != nil {
@@ -188,13 +210,26 @@ func (o *orm) InsertMulti(bulk int, mds interface{}) (int64, error) {
 
 			o.setPk(mi, ind, id)
 
-			cnt += 1
+			cnt++
 		}
 	} else {
 		mi, _ := o.getMiInd(sind.Index(0).Interface(), false)
 		return o.alias.DbBaser.InsertMulti(o.db, mi, sind, bulk, o.alias.TZ)
 	}
 	return cnt, nil
+}
+
+// InsertOrUpdate data to database
+func (o *orm) InsertOrUpdate(md interface{}, colConflitAndArgs ...string) (int64, error) {
+	mi, ind := o.getMiInd(md, true)
+	id, err := o.alias.DbBaser.InsertOrUpdate(o.db, mi, ind, o.alias, colConflitAndArgs...)
+	if err != nil {
+		return id, err
+	}
+
+	o.setPk(mi, ind, id)
+
+	return id, nil
 }
 
 // update model to database.
@@ -209,9 +244,10 @@ func (o *orm) Update(md interface{}, cols ...string) (int64, error) {
 }
 
 // delete model in database
-func (o *orm) Delete(md interface{}) (int64, error) {
+// cols shows the delete conditions values read from. deafult is pk
+func (o *orm) Delete(md interface{}, cols ...string) (int64, error) {
 	mi, ind := o.getMiInd(md, true)
-	num, err := o.alias.DbBaser.Delete(o.db, mi, ind, o.alias.TZ)
+	num, err := o.alias.DbBaser.Delete(o.db, mi, ind, o.alias.TZ, cols)
 	if err != nil {
 		return num, err
 	}
@@ -285,7 +321,7 @@ func (o *orm) LoadRelated(md interface{}, name string, args ...interface{}) (int
 		qs.orders = []string{order}
 	}
 
-	find := ind.Field(fi.fieldIndex)
+	find := ind.FieldByIndex(fi.fieldIndex)
 
 	var nums int64
 	var err error
@@ -402,7 +438,7 @@ func (o *orm) QueryTable(ptrStructOrTableName interface{}) (qs QuerySeter) {
 		}
 	} else {
 		name = getFullName(indirectType(reflect.TypeOf(ptrStructOrTableName)))
-		if mi, ok := modelCache.getByFN(name); ok {
+		if mi, ok := modelCache.getByFullName(name); ok {
 			qs = newQuerySet(o, mi)
 		}
 	}
@@ -489,11 +525,7 @@ func (o *orm) Driver() Driver {
 	return driver(o.alias.Name)
 }
 
-func (o *orm) GetDB() dbQuerier {
-	panic(ErrNotImplement)
-}
-
-// create new orm
+// NewOrm create new orm
 func NewOrm() Ormer {
 	BootStrap() // execute only once
 
@@ -505,7 +537,7 @@ func NewOrm() Ormer {
 	return o
 }
 
-// create a new ormer object with specify *sql.DB for query
+// NewOrmWithDB create a new ormer object with specify *sql.DB for query
 func NewOrmWithDB(driverName, aliasName string, db *sql.DB) (Ormer, error) {
 	var al *alias
 
