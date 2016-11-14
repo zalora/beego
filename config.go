@@ -137,7 +137,7 @@ func init() {
 	if len(os.Args) > 1 {
 		configFile := filepath.Join(os.Args[1], "app.conf")
 		if utils.FileExists(configFile) {
-			AppConfigPath = configFile
+			appConfigPath = configFile
 		}
 	} else {
 		appConfigPath = filepath.Join(workPath, "conf", "app.conf")
