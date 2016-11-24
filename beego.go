@@ -85,7 +85,7 @@ func initBeforeHTTPRun() {
 
 // TestBeegoInit is for test package init
 func TestBeegoInit(ap string) {
-	path := filepath.Join(ap, "conf", "app.conf")
+	path := filepath.Join("conf", "app.conf")
 	os.Chdir(ap)
 	InitBeegoBeforeTest(path)
 }
