@@ -40,7 +40,7 @@ func TestHtml2str(t *testing.T) {
 
 
 	\n`
-	if Html2str(h) != "123\\n\n\\n" {
+	if HTML2str(h) != "123\\n\n\\n" {
 		t.Error("should be equal")
 	}
 }
@@ -72,7 +72,7 @@ func TestDate(t *testing.T) {
 	}
 }
 
-func TestCompare(t *testing.T) {
+func TestCompareRelated(t *testing.T) {
 	if !Compare("abc", "abc") {
 		t.Error("should be equal")
 	}
@@ -81,6 +81,15 @@ func TestCompare(t *testing.T) {
 	}
 	if !Compare("1", 1) {
 		t.Error("should be equal")
+	}
+	if CompareNot("abc", "abc") {
+		t.Error("should be equal")
+	}
+	if !CompareNot("abc", "aBc") {
+		t.Error("should be not equal")
+	}
+	if !NotNil("a string") {
+		t.Error("should not be nil")
 	}
 }
 
@@ -101,8 +110,19 @@ func TestHtmlunquote(t *testing.T) {
 }
 
 func TestParseForm(t *testing.T) {
+	type ExtendInfo struct {
+		Hobby string `form:"hobby"`
+		Memo  string
+	}
+
+	type OtherInfo struct {
+		Organization string `form:"organization"`
+		Title        string `form:"title"`
+		ExtendInfo
+	}
+
 	type user struct {
-		Id      int         `form:"-"`
+		ID      int         `form:"-"`
 		tag     string      `form:"tag"`
 		Name    interface{} `form:"username"`
 		Age     int         `form:"age,text"`
@@ -110,19 +130,24 @@ func TestParseForm(t *testing.T) {
 		Intro   string    `form:",textarea"`
 		StrBool bool      `form:"strbool"`
 		Date    time.Time `form:"date,2006-01-02"`
+		OtherInfo
 	}
 
 	u := user{}
 	form := url.Values{
-		"Id":       []string{"1"},
-		"-":        []string{"1"},
-		"tag":      []string{"no"},
-		"username": []string{"test"},
-		"age":      []string{"40"},
-		"Email":    []string{"test@gmail.com"},
-		"Intro":    []string{"I am an engineer!"},
-		"strbool":  []string{"yes"},
-		"date":     []string{"2014-11-12"},
+		"ID":           []string{"1"},
+		"-":            []string{"1"},
+		"tag":          []string{"no"},
+		"username":     []string{"test"},
+		"age":          []string{"40"},
+		"Email":        []string{"test@gmail.com"},
+		"Intro":        []string{"I am an engineer!"},
+		"strbool":      []string{"yes"},
+		"date":         []string{"2014-11-12"},
+		"organization": []string{"beego"},
+		"title":        []string{"CXO"},
+		"hobby":        []string{"Basketball"},
+		"memo":         []string{"nothing"},
 	}
 	if err := ParseForm(form, u); err == nil {
 		t.Fatal("nothing will be changed")
@@ -130,8 +155,8 @@ func TestParseForm(t *testing.T) {
 	if err := ParseForm(form, &u); err != nil {
 		t.Fatal(err)
 	}
-	if u.Id != 0 {
-		t.Errorf("Id should equal 0 but got %v", u.Id)
+	if u.ID != 0 {
+		t.Errorf("ID should equal 0 but got %v", u.ID)
 	}
 	if len(u.tag) != 0 {
 		t.Errorf("tag's length should equal 0 but got %v", len(u.tag))
@@ -155,11 +180,23 @@ func TestParseForm(t *testing.T) {
 	if y != 2014 || m.String() != "November" || d != 12 {
 		t.Errorf("Date should equal `2014-11-12`, but got `%v`", u.Date.String())
 	}
+	if u.Organization != "beego" {
+		t.Errorf("Organization should equal `beego`, but got `%v`", u.Organization)
+	}
+	if u.Title != "CXO" {
+		t.Errorf("Title should equal `CXO`, but got `%v`", u.Title)
+	}
+	if u.Hobby != "Basketball" {
+		t.Errorf("Hobby should equal `Basketball`, but got `%v`", u.Hobby)
+	}
+	if len(u.Memo) != 0 {
+		t.Errorf("Memo's length should equal 0 but got %v", len(u.Memo))
+	}
 }
 
 func TestRenderForm(t *testing.T) {
 	type user struct {
-		Id      int         `form:"-"`
+		ID      int         `form:"-"`
 		tag     string      `form:"tag"`
 		Name    interface{} `form:"username"`
 		Age     int         `form:"age,text,年龄："`
@@ -186,13 +223,18 @@ func TestRenderForm(t *testing.T) {
 }
 
 func TestRenderFormField(t *testing.T) {
-	html := renderFormField("Label: ", "Name", "text", "Value", "", "")
+	html := renderFormField("Label: ", "Name", "text", "Value", "", "", false)
 	if html != `Label: <input name="Name" type="text" value="Value">` {
 		t.Errorf("Wrong html output for input[type=text]: %v ", html)
 	}
 
-	html = renderFormField("Label: ", "Name", "textarea", "Value", "", "")
+	html = renderFormField("Label: ", "Name", "textarea", "Value", "", "", false)
 	if html != `Label: <textarea name="Name">Value</textarea>` {
+		t.Errorf("Wrong html output for textarea: %v ", html)
+	}
+
+	html = renderFormField("Label: ", "Name", "textarea", "Value", "", "", true)
+	if html != `Label: <textarea name="Name" required>Value</textarea>` {
 		t.Errorf("Wrong html output for textarea: %v ", html)
 	}
 }
@@ -200,38 +242,134 @@ func TestRenderFormField(t *testing.T) {
 func TestParseFormTag(t *testing.T) {
 	// create struct to contain field with different types of struct-tag `form`
 	type user struct {
-		All       int `form:"name,text,年龄："`
-		NoName    int `form:",hidden,年龄："`
-		OnlyLabel int `form:",,年龄："`
-		OnlyName  int `form:"name" id:"name" class:"form-name"`
-		Ignored   int `form:"-"`
+		All            int `form:"name,text,年龄："`
+		NoName         int `form:",hidden,年龄："`
+		OnlyLabel      int `form:",,年龄："`
+		OnlyName       int `form:"name" id:"name" class:"form-name"`
+		Ignored        int `form:"-"`
+		Required       int `form:"name" required:"true"`
+		IgnoreRequired int `form:"name"`
+		NotRequired    int `form:"name" required:"false"`
 	}
 
 	objT := reflect.TypeOf(&user{}).Elem()
 
-	label, name, fType, id, class, ignored := parseFormTag(objT.Field(0))
+	label, name, fType, id, class, ignored, required := parseFormTag(objT.Field(0))
 	if !(name == "name" && label == "年龄：" && fType == "text" && ignored == false) {
 		t.Errorf("Form Tag with name, label and type was not correctly parsed.")
 	}
 
-	label, name, fType, id, class, ignored = parseFormTag(objT.Field(1))
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(1))
 	if !(name == "NoName" && label == "年龄：" && fType == "hidden" && ignored == false) {
 		t.Errorf("Form Tag with label and type but without name was not correctly parsed.")
 	}
 
-	label, name, fType, id, class, ignored = parseFormTag(objT.Field(2))
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(2))
 	if !(name == "OnlyLabel" && label == "年龄：" && fType == "text" && ignored == false) {
 		t.Errorf("Form Tag containing only label was not correctly parsed.")
 	}
 
-	label, name, fType, id, class, ignored = parseFormTag(objT.Field(3))
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(3))
 	if !(name == "name" && label == "OnlyName: " && fType == "text" && ignored == false &&
 		id == "name" && class == "form-name") {
 		t.Errorf("Form Tag containing only name was not correctly parsed.")
 	}
 
-	label, name, fType, id, class, ignored = parseFormTag(objT.Field(4))
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(4))
 	if ignored == false {
 		t.Errorf("Form Tag that should be ignored was not correctly parsed.")
+	}
+
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(5))
+	if !(name == "name" && required == true) {
+		t.Errorf("Form Tag containing only name and required was not correctly parsed.")
+	}
+
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(6))
+	if !(name == "name" && required == false) {
+		t.Errorf("Form Tag containing only name and ignore required was not correctly parsed.")
+	}
+
+	label, name, fType, id, class, ignored, required = parseFormTag(objT.Field(7))
+	if !(name == "name" && required == false) {
+		t.Errorf("Form Tag containing only name and not required was not correctly parsed.")
+	}
+
+}
+
+func TestMapGet(t *testing.T) {
+	// test one level map
+	m1 := map[string]int64{
+		"a": 1,
+		"1": 2,
+	}
+
+	if res, err := MapGet(m1, "a"); err == nil {
+		if res.(int64) != 1 {
+			t.Errorf("Should return 1, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
+	}
+
+	if res, err := MapGet(m1, "1"); err == nil {
+		if res.(int64) != 2 {
+			t.Errorf("Should return 2, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
+	}
+
+	if res, err := MapGet(m1, 1); err == nil {
+		if res.(int64) != 2 {
+			t.Errorf("Should return 2, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
+	}
+
+	// test 2 level map
+	m2 := map[string]interface{}{
+		"1": map[string]float64{
+			"2": 3.5,
+		},
+	}
+
+	if res, err := MapGet(m2, 1, 2); err == nil {
+		if res.(float64) != 3.5 {
+			t.Errorf("Should return 3.5, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
+	}
+
+	// test 5 level map
+	m5 := map[string]interface{}{
+		"1": map[string]interface{}{
+			"2": map[string]interface{}{
+				"3": map[string]interface{}{
+					"4": map[string]interface{}{
+						"5": 1.2,
+					},
+				},
+			},
+		},
+	}
+
+	if res, err := MapGet(m5, 1, 2, 3, 4, 5); err == nil {
+		if res.(float64) != 1.2 {
+			t.Errorf("Should return 1.2, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
+	}
+
+	// check whether element not exists in map
+	if res, err := MapGet(m5, 5, 4, 3, 2, 1); err == nil {
+		if res != nil {
+			t.Errorf("Should return nil, but return %v", res)
+		}
+	} else {
+		t.Errorf("Error happens %v", err)
 	}
 }

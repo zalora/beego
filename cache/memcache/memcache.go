@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// package memcahe for cache provider
+// Package memcache for cache provider
 //
 // depend on github.com/bradfitz/gomemcache/memcache
 //
@@ -33,53 +33,81 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-
-	"github.com/bradfitz/gomemcache/memcache"
+	"time"
 
 	"github.com/astaxie/beego/cache"
+	"github.com/bradfitz/gomemcache/memcache"
 )
 
-// Memcache adapter.
-type MemcacheCache struct {
+// Cache Memcache adapter.
+type Cache struct {
 	conn     *memcache.Client
 	conninfo []string
 }
 
-// create new memcache adapter.
-func NewMemCache() *MemcacheCache {
-	return &MemcacheCache{}
+// NewMemCache create new memcache adapter.
+func NewMemCache() cache.Cache {
+	return &Cache{}
 }
 
-// get value from memcache.
-func (rc *MemcacheCache) Get(key string) interface{} {
+// Get get value from memcache.
+func (rc *Cache) Get(key string) interface{} {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
 		}
 	}
 	if item, err := rc.conn.Get(key); err == nil {
-		return string(item.Value)
+		return item.Value
 	}
 	return nil
 }
 
-// put value to memcache. only support string.
-func (rc *MemcacheCache) Put(key string, val interface{}, timeout int64) error {
+// GetMulti get value from memcache.
+func (rc *Cache) GetMulti(keys []string) []interface{} {
+	size := len(keys)
+	var rv []interface{}
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			for i := 0; i < size; i++ {
+				rv = append(rv, err)
+			}
+			return rv
+		}
+	}
+	mv, err := rc.conn.GetMulti(keys)
+	if err == nil {
+		for _, v := range mv {
+			rv = append(rv, v.Value)
+		}
+		return rv
+	}
+	for i := 0; i < size; i++ {
+		rv = append(rv, err)
+	}
+	return rv
+}
+
+// Put put value to memcache.
+func (rc *Cache) Put(key string, val interface{}, timeout time.Duration) error {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
 		}
 	}
-	v, ok := val.(string)
-	if !ok {
-		return errors.New("val must string")
+	item := memcache.Item{Key: key, Expiration: int32(timeout / time.Second)}
+	if v, ok := val.([]byte); ok {
+		item.Value = v
+	} else if str, ok := val.(string); ok {
+		item.Value = []byte(str)
+	} else {
+		return errors.New("val only support string and []byte")
 	}
-	item := memcache.Item{Key: key, Value: []byte(v), Expiration: int32(timeout)}
 	return rc.conn.Set(&item)
 }
 
-// delete value in memcache.
-func (rc *MemcacheCache) Delete(key string) error {
+// Delete delete value in memcache.
+func (rc *Cache) Delete(key string) error {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
@@ -88,8 +116,8 @@ func (rc *MemcacheCache) Delete(key string) error {
 	return rc.conn.Delete(key)
 }
 
-// increase counter.
-func (rc *MemcacheCache) Incr(key string) error {
+// Incr increase counter.
+func (rc *Cache) Incr(key string) error {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
@@ -99,8 +127,8 @@ func (rc *MemcacheCache) Incr(key string) error {
 	return err
 }
 
-// decrease counter.
-func (rc *MemcacheCache) Decr(key string) error {
+// Decr decrease counter.
+func (rc *Cache) Decr(key string) error {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
@@ -110,8 +138,8 @@ func (rc *MemcacheCache) Decr(key string) error {
 	return err
 }
 
-// check value exists in memcache.
-func (rc *MemcacheCache) IsExist(key string) bool {
+// IsExist check value exists in memcache.
+func (rc *Cache) IsExist(key string) bool {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return false
@@ -124,8 +152,8 @@ func (rc *MemcacheCache) IsExist(key string) bool {
 	return true
 }
 
-// clear all cached in memcache.
-func (rc *MemcacheCache) ClearAll() error {
+// ClearAll clear all cached in memcache.
+func (rc *Cache) ClearAll() error {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
 			return err
@@ -134,10 +162,10 @@ func (rc *MemcacheCache) ClearAll() error {
 	return rc.conn.FlushAll()
 }
 
-// start memcache adapter.
+// StartAndGC start memcache adapter.
 // config string is like {"conn":"connection info"}.
 // if connecting error, return.
-func (rc *MemcacheCache) StartAndGC(config string) error {
+func (rc *Cache) StartAndGC(config string) error {
 	var cf map[string]string
 	json.Unmarshal([]byte(config), &cf)
 	if _, ok := cf["conn"]; !ok {
@@ -153,11 +181,11 @@ func (rc *MemcacheCache) StartAndGC(config string) error {
 }
 
 // connect to memcache and keep the connection.
-func (rc *MemcacheCache) connectInit() error {
+func (rc *Cache) connectInit() error {
 	rc.conn = memcache.New(rc.conninfo...)
 	return nil
 }
 
 func init() {
-	cache.Register("memcache", NewMemCache())
+	cache.Register("memcache", NewMemCache)
 }
