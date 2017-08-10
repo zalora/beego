@@ -165,9 +165,6 @@ func decodeCookie(block cipher.Block, hashKey, name, value string, gcmaxlifetime
 		return nil, errors.New("Decode: invalid timestamp")
 	}
 	t2 := time.Now().UTC().Unix()
-	if t1 > t2 {
-		return nil, errors.New("Decode: timestamp is too new")
-	}
 	if t1 < t2-gcmaxlifetime {
 		return nil, errors.New("Decode: expired timestamp")
 	}
