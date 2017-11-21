@@ -43,6 +43,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
+	"time"
 )
 
 // Configer defines how to get and set value from configuration raw data.
@@ -187,20 +189,54 @@ func ParseBool(val interface{}) (value bool, err error) {
 				return false, nil
 			}
 		case int8, int32, int64:
-			strV := fmt.Sprintf("%s", v)
+			strV := fmt.Sprintf("%d", v)
 			if strV == "1" {
 				return true, nil
 			} else if strV == "0" {
 				return false, nil
 			}
 		case float64:
-			if v == 1 {
+			if v == 1.0 {
 				return true, nil
-			} else if v == 0 {
+			} else if v == 0.0 {
 				return false, nil
 			}
 		}
 		return false, fmt.Errorf("parsing %q: invalid syntax", val)
 	}
 	return false, fmt.Errorf("parsing <nil>: invalid syntax")
+}
+
+// ToString converts values of any type to string.
+func ToString(x interface{}) string {
+	switch y := x.(type) {
+
+	// Handle dates with special logic
+	// This needs to come above the fmt.Stringer
+	// test since time.Time's have a .String()
+	// method
+	case time.Time:
+		return y.Format("A Monday")
+
+	// Handle type string
+	case string:
+		return y
+
+	// Handle type with .String() method
+	case fmt.Stringer:
+		return y.String()
+
+	// Handle type with .Error() method
+	case error:
+		return y.Error()
+
+	}
+
+	// Handle named string type
+	if v := reflect.ValueOf(x); v.Kind() == reflect.String {
+		return v.String()
+	}
+
+	// Fallback to fmt package for anything else like numeric types
+	return fmt.Sprint(x)
 }
