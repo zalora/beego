@@ -128,7 +128,7 @@ func encodeCookie(block cipher.Block, hashKey, name string, value map[interface{
 	}
 	b = encode(b)
 	// 3. Create MAC for "name|date|value". Extra pipe to be used later.
-	b = []byte(fmt.Sprintf("%s|%d|%s|", name, time.Now().UTC().Unix(), b))
+	b = []byte(fmt.Sprintf("%s|%d|%s|", name, time.Now().UTC().UnixNano(), b))
 	h := hmac.New(sha1.New, []byte(hashKey))
 	h.Write(b)
 	sig := h.Sum(nil)
@@ -164,7 +164,10 @@ func decodeCookie(block cipher.Block, hashKey, name, value string, gcmaxlifetime
 	if t1, err = strconv.ParseInt(string(parts[0]), 10, 64); err != nil {
 		return nil, errors.New("Decode: invalid timestamp")
 	}
-	t2 := time.Now().UTC().Unix()
+	t2 := time.Now().UTC().UnixNano()
+	if t1 > t2 {
+		return nil, errors.New("Decode: timestamp is too new")
+	}
 	if t1 < t2-gcmaxlifetime {
 		return nil, errors.New("Decode: expired timestamp")
 	}

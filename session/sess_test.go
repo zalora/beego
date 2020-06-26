@@ -18,6 +18,7 @@ import (
 	"crypto/aes"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func Test_gob(t *testing.T) {
@@ -74,8 +75,9 @@ func TestCookieEncodeDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal("encodeCookie:", err)
 	}
+	gcmaxlifetime = 3600 * int64(time.Second)
 	dst := make(map[interface{}]interface{})
-	dst, err = decodeCookie(block, hashKey, securityName, str, 3600)
+	dst, err = decodeCookie(block, hashKey, securityName, str, gcmaxlifetime)
 	if err != nil {
 		t.Fatal("decodeCookie", err)
 	}

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 )
 
 var cookiepder = &CookieProvider{}
@@ -131,7 +132,7 @@ func (pder *CookieProvider) SessionInit(maxlifetime int64, config string) error 
 	if err != nil {
 		return err
 	}
-	pder.maxlifetime = maxlifetime
+	pder.maxlifetime = maxlifetime * int64(time.Second)
 	return nil
 }
 
