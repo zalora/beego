@@ -706,16 +706,17 @@ func (p *ControllerRegister) ServeHTTP(rw http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if routerInfo != nil {
+		// Store router pattern into context.
+		context.Input.SetData("RouterPattern", routerInfo.pattern)
+	}
+
 	//execute middleware filters
 	if len(p.filters[BeforeExec]) > 0 && p.execFilter(context, urlPath, BeforeExec) {
 		goto Admin
 	}
 
 	if routerInfo != nil {
-		if BConfig.RunMode == DEV {
-			//store router pattern into context
-			context.Input.SetData("RouterPattern", routerInfo.pattern)
-		}
 		if routerInfo.routerType == routerTypeRESTFul {
 			if _, ok := routerInfo.methods[r.Method]; ok {
 				isRunnable = true
