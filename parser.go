@@ -139,7 +139,9 @@ func genRouterCode(pkgRealpath string) {
 		sortKey    []string
 	)
 	for k := range genInfoList {
-		sortKey = append(sortKey, k)
+		for _, c := range genInfoList[k] {
+			sortKey = append(sortKey, k+"_"+c.Method)
+		}
 	}
 	sort.Strings(sortKey)
 	for _, k := range sortKey {
