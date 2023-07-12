@@ -46,7 +46,7 @@ var (
 	lastupdateFilename = "lastupdate.tmp"
 	commentFilename    string
 	pkgLastupdate      map[string]int64
-	genInfoList        map[string][]ControllerComments
+	genInfoList        []ControllerComments
 )
 
 const commentPrefix = "commentsRouter_"
@@ -63,7 +63,6 @@ func parserPkg(pkgRealpath, pkgpath string) error {
 		logs.Info(pkgRealpath + " no changed")
 		return nil
 	}
-	genInfoList = make(map[string][]ControllerComments)
 	fileSet := token.NewFileSet()
 	astPkgs, err := parser.ParseDir(fileSet, pkgRealpath, func(info os.FileInfo) bool {
 		name := info.Name()
@@ -107,6 +106,8 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				cc := ControllerComments{}
 				cc.Method = funcName
 				cc.Router = e1[0]
+				cc.fullName = key
+				cc.sortKey = key + "_" + funcName
 				if len(e1) == 2 && e1[1] != "" {
 					e1 = strings.SplitN(e1[1], " ", 2)
 					if len(e1) >= 1 {
@@ -124,7 +125,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						cc.Params = append(cc.Params, map[string]string{strings.Join(kk[:len(kk)-1], ":"): kk[len(kk)-1]})
 					}
 				}
-				genInfoList[key] = append(genInfoList[key], cc)
+				genInfoList = append(genInfoList, cc)
 			}
 		}
 	}
@@ -136,42 +137,37 @@ func genRouterCode(pkgRealpath string) {
 	logs.Info("generate router from comments")
 	var (
 		globalinfo string
-		sortKey    []string
 	)
-	for k := range genInfoList {
-		sortKey = append(sortKey, k)
-	}
-	sort.Strings(sortKey)
-	for _, k := range sortKey {
-		cList := genInfoList[k]
-		for _, c := range cList {
-			allmethod := "nil"
-			if len(c.AllowHTTPMethods) > 0 {
-				allmethod = "[]string{"
-				for _, m := range c.AllowHTTPMethods {
-					allmethod += `"` + m + `",`
-				}
-				allmethod = strings.TrimRight(allmethod, ",") + "}"
+	sort.Slice(genInfoList, func(i, j int) bool {
+		return genInfoList[i].sortKey < genInfoList[j].sortKey
+	})
+	for _, c := range genInfoList {
+		allmethod := "nil"
+		if len(c.AllowHTTPMethods) > 0 {
+			allmethod = "[]string{"
+			for _, m := range c.AllowHTTPMethods {
+				allmethod += `"` + m + `",`
 			}
-			params := "nil"
-			if len(c.Params) > 0 {
-				params = "[]map[string]string{"
-				for _, p := range c.Params {
-					for k, v := range p {
-						params = params + `map[string]string{` + k + `:"` + v + `"},`
-					}
+			allmethod = strings.TrimRight(allmethod, ",") + "}"
+		}
+		params := "nil"
+		if len(c.Params) > 0 {
+			params = "[]map[string]string{"
+			for _, p := range c.Params {
+				for k, v := range p {
+					params = params + `map[string]string{` + k + `:"` + v + `"},`
 				}
-				params = strings.TrimRight(params, ",") + "}"
 			}
-			globalinfo = globalinfo + `
-	beego.GlobalControllerRouter["` + k + `"] = append(beego.GlobalControllerRouter["` + k + `"],
+			params = strings.TrimRight(params, ",") + "}"
+		}
+		globalinfo = globalinfo + `
+	beego.GlobalControllerRouter["` + c.fullName + `"] = append(beego.GlobalControllerRouter["` + c.fullName + `"],
 		beego.ControllerComments{
 			Method: "` + strings.TrimSpace(c.Method) + `",
 			` + "Router: `" + c.Router + "`" + `,
 			AllowHTTPMethods: ` + allmethod + `,
 			Params: ` + params + `})
 `
-		}
 	}
 	if globalinfo != "" {
 		f, err := os.Create(filepath.Join(getRouterDir(pkgRealpath), commentFilename))
