@@ -105,7 +105,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				}
 				key := pkgpath + ":" + controllerName
 				cc := ControllerComments{}
-				cc.Method = funcName
+				cc.Method = strings.TrimSpace(funcName)
 				cc.Router = e1[0]
 				if len(e1) == 2 && e1[1] != "" {
 					e1 = strings.SplitN(e1[1], " ", 2)
@@ -144,6 +144,9 @@ func genRouterCode(pkgRealpath string) {
 	sort.Strings(sortKey)
 	for _, k := range sortKey {
 		cList := genInfoList[k]
+		sort.Slice(cList, func(i, j int) bool {
+			return cList[i].Method < cList[j].Method
+		})
 		for _, c := range cList {
 			allmethod := "nil"
 			if len(c.AllowHTTPMethods) > 0 {
@@ -166,7 +169,7 @@ func genRouterCode(pkgRealpath string) {
 			globalinfo = globalinfo + `
 	beego.GlobalControllerRouter["` + k + `"] = append(beego.GlobalControllerRouter["` + k + `"],
 		beego.ControllerComments{
-			Method: "` + strings.TrimSpace(c.Method) + `",
+			Method: "` + c.Method + `",
 			` + "Router: `" + c.Router + "`" + `,
 			AllowHTTPMethods: ` + allmethod + `,
 			Params: ` + params + `})
