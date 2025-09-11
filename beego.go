@@ -23,7 +23,7 @@ import (
 
 const (
 	// VERSION represent beego web framework version.
-	VERSION = "1.7.5"
+	VERSION = "1.7.9"
 
 	// DEV is for develop
 	DEV = "dev"
@@ -31,7 +31,7 @@ const (
 	PROD = "prod"
 )
 
-//hook function to run
+// hook function to run
 type hookfunc func() error
 
 var (
