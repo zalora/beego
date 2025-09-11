@@ -178,7 +178,7 @@ func (c *JSONConfigContainer) Strings(key string) []string {
 	if stringVal == "" {
 		return nil
 	}
-	return strings.Split(c.String(key), ";")
+	return strings.Split(c.String(key), StringsSeparator)
 }
 
 // DefaultStrings returns the []string value for a given key.

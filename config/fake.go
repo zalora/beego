@@ -50,7 +50,7 @@ func (c *fakeConfigContainer) Strings(key string) []string {
 	if v == "" {
 		return nil
 	}
-	return strings.Split(v, ";")
+	return strings.Split(v, StringsSeparator)
 }
 
 func (c *fakeConfigContainer) DefaultStrings(key string, defaultval []string) []string {

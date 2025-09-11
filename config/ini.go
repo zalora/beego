@@ -278,7 +278,7 @@ func (c *IniConfigContainer) Strings(key string) []string {
 	if v == "" {
 		return nil
 	}
-	return strings.Split(v, ";")
+	return strings.Split(v, StringsSeparator)
 }
 
 // DefaultStrings returns the []string value for a given key.

@@ -19,14 +19,15 @@
 // go install github.com/beego/x2j.
 //
 // Usage:
-//  import(
-//    _ "github.com/astaxie/beego/config/xml"
-//      "github.com/astaxie/beego/config"
-//  )
 //
-//  cnf, err := config.NewConfig("xml", "config.xml")
+//	import(
+//	  _ "github.com/astaxie/beego/config/xml"
+//	    "github.com/astaxie/beego/config"
+//	)
 //
-//More docs http://beego.me/docs/module/config.md
+//	cnf, err := config.NewConfig("xml", "config.xml")
+//
+// More docs http://beego.me/docs/module/config.md
 package xml
 
 import (
@@ -43,6 +44,8 @@ import (
 
 	"github.com/astaxie/beego/config"
 	"github.com/beego/x2j"
+
+	zconfig "github.com/zalora/beego/config"
 )
 
 // Config is a xml config parser and implements Config interface.
@@ -178,7 +181,7 @@ func (c *ConfigContainer) Strings(key string) []string {
 	if v == "" {
 		return nil
 	}
-	return strings.Split(v, ";")
+	return strings.Split(v, zconfig.StringsSeparator)
 }
 
 // DefaultStrings returns the []string value for a given key.
